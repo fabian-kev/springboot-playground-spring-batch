@@ -3,13 +3,13 @@ package com.fabiankevin.springboot_batch_cursor_as_reader.config;
 import com.fabiankevin.springboot_batch_cursor_as_reader.persistence.CustomerEntity;
 import com.fabiankevin.springboot_batch_cursor_as_reader.persistence.CustomerRepository;
 import com.zaxxer.hikari.HikariDataSource;
+import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JdbcCursorItemReader;
@@ -17,6 +17,8 @@ import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuild
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
+
+import java.util.stream.Collectors;
 
 @Slf4j
 @Configuration
@@ -26,14 +28,15 @@ public class CustomerBatchConfig {
         return new JdbcCursorItemReaderBuilder<CustomerEntity>()
                 .dataSource(hikariDataSource)
                 .name("customerReader")
-                .sql("select ID, NAME, STATUS, CREATED_AT from CUSTOMERS WHERE STATUS='INACTIVE'")
+                .sql("select ID, NAME, STATUS, CREATED_AT from CUSTOMERS WHERE STATUS=?")
+                .preparedStatementSetter(ps -> ps.setString(1, "INACTIVE"))
+                .maxItemCount(100_000)
                 .rowMapper(new CustomerEntityRowMapper())
                 .build();
-
     }
 
     @Bean
-    public ItemProcessor<CustomerEntity, CustomerEntity> customerEntityItemProcessor(){
+    public ItemProcessor<CustomerEntity, CustomerEntity> customerEntityItemProcessor() {
         return item -> {
             item.setStatus("ACTIVE");
             return item;
@@ -41,22 +44,26 @@ public class CustomerBatchConfig {
     }
 
     @Bean
-    public ItemWriter<CustomerEntity> jpaCustomerWriter(CustomerRepository customerRepository){
+    public ItemWriter<CustomerEntity> jpaCustomerWriter(CustomerRepository customerRepository) {
         return chunk -> {
-            customerRepository.saveAll(chunk.getItems());
+            customerRepository.updateAllToActiveById(chunk.getItems().stream()
+                    .map(CustomerEntity::getId)
+                    .collect(Collectors.toSet()));
             log.info("{} have been saved.", chunk.getItems().size());
         };
     }
 
     @Bean
+    @Transactional
     public Step customerStep(JobRepository jobRepository,
                              PlatformTransactionManager transactionManager,
                              JdbcCursorItemReader<CustomerEntity> customerReader,
+                             ItemProcessor<CustomerEntity, CustomerEntity> customerEntityItemProcessor,
                              ItemWriter<CustomerEntity> jpaCustomerWriter) {
         return new StepBuilder("customerStep", jobRepository)
                 .<CustomerEntity, CustomerEntity>chunk(10, transactionManager)
                 .reader(customerReader)
-                .processor(customerEntityItemProcessor())
+                .processor(customerEntityItemProcessor)
                 .writer(jpaCustomerWriter)
                 .build();
     }

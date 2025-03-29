@@ -1,1 +1,13 @@
-spring.application.name=springboot-batch-cursor-as-reader
+spring:
+  application:
+    name: springboot-batch-cursor-as-reader
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: false
+        order_inserts: true
+        order_updates: true
+        generate_statistics: false
+        jdbc:
+          batch_size: 5000
