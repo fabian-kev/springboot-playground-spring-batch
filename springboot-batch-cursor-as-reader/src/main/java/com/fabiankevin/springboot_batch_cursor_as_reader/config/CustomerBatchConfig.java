@@ -3,8 +3,11 @@ package com.fabiankevin.springboot_batch_cursor_as_reader.config;
 import com.fabiankevin.springboot_batch_cursor_as_reader.persistence.CustomerEntity;
 import com.fabiankevin.springboot_batch_cursor_as_reader.persistence.CustomerRepository;
 import com.zaxxer.hikari.HikariDataSource;
-import jakarta.transaction.Transactional;
+import jakarta.persistence.EntityManagerFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.SessionFactory;
+import org.hibernate.StatelessSession;
+import org.hibernate.Transaction;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
@@ -23,6 +26,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @Configuration
 public class CustomerBatchConfig {
+
+
     @Bean
     public JdbcCursorItemReader<CustomerEntity> customerReader(HikariDataSource hikariDataSource) {
         return new JdbcCursorItemReaderBuilder<CustomerEntity>()
@@ -53,15 +58,35 @@ public class CustomerBatchConfig {
         };
     }
 
+    //StatelessSession Limitation:
+    //StatelessSession doesn’t use the persistence context, so features like dirty checking or cascading don’t apply. This is fine for your use case (simple updates), but it’s worth noting.
+    @Bean("statelessItemWriter")
+    public ItemWriter<CustomerEntity> statelessItemWriter(EntityManagerFactory entityManagerFactory) {
+        return items -> {
+            StatelessSession session = entityManagerFactory.unwrap(SessionFactory.class).openStatelessSession();
+            Transaction tx = session.beginTransaction();
+            try {
+                for (CustomerEntity item : items) {
+                    session.update(item);
+                }
+                tx.commit();
+            } catch (Exception e) {
+                tx.rollback();
+                throw e;
+            } finally {
+                session.close();
+            }
+        };
+    }
+
     @Bean
-    @Transactional
     public Step customerStep(JobRepository jobRepository,
                              PlatformTransactionManager transactionManager,
                              JdbcCursorItemReader<CustomerEntity> customerReader,
                              ItemProcessor<CustomerEntity, CustomerEntity> customerEntityItemProcessor,
                              ItemWriter<CustomerEntity> jpaCustomerWriter) {
         return new StepBuilder("customerStep", jobRepository)
-                .<CustomerEntity, CustomerEntity>chunk(10, transactionManager)
+                .<CustomerEntity, CustomerEntity>chunk(500, transactionManager)
                 .reader(customerReader)
                 .processor(customerEntityItemProcessor)
                 .writer(jpaCustomerWriter)

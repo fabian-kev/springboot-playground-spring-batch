@@ -8,6 +8,6 @@ spring:
         format_sql: false
         order_inserts: true
         order_updates: true
-        generate_statistics: false
+        generate_statistics: true
         jdbc:
           batch_size: 5000

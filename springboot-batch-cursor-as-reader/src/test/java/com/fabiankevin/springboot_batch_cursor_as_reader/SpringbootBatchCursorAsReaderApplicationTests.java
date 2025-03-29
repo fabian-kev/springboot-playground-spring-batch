@@ -29,7 +29,7 @@ class SpringbootBatchCursorAsReaderApplicationTests {
 
 	@BeforeEach
 	public void setup(){
-		List<CustomerEntity> inactive = IntStream.range(0, 10).boxed()
+		List<CustomerEntity> inactive = IntStream.range(0, 500).boxed()
 				.map(i -> {
 					CustomerEntity customerEntity = new CustomerEntity();
 					customerEntity.setCreatedAt(Instant.now());
@@ -48,7 +48,7 @@ class SpringbootBatchCursorAsReaderApplicationTests {
 		long count = customerRepository.count(Example.of(CustomerEntity.builder()
 				.status("ACTIVE")
 				.build()));
-		assertEquals(10, count, "active customers should be equal");
+		assertEquals(500, count, "active customers should be equal");
 	}
 
 }
